@@ -1,4 +1,4 @@
-import {AppState, Platform} from 'react-native';
+import {AppState, AppStateStatus, Platform} from 'react-native';
 import {
   createContext,
   FC,
@@ -9,6 +9,7 @@ import {
 } from 'react';
 import {
   check,
+  openSettings,
   PERMISSIONS,
   PermissionStatus,
   request,
@@ -33,18 +34,20 @@ export const PermissionContext = createContext({} as PermissionsContextProps);
 export const PermissionsProvider: FC<PropsWithChildren> = ({children}: any) => {
   const [permissions, setPermissions] = useState(permissionsInitialState);
 
-  // Preguntar permisos
   const askLocationPermission = async () => {
     let permissionStatus: PermissionStatus;
 
     if (Platform.OS === 'ios') {
-      // Comprueba el estado del permiso de ubicación cuando la aplicación está en uso en iOS
       permissionStatus = await request(PERMISSIONS.IOS.LOCATION_WHEN_IN_USE);
     } else {
-      // Comprueba el estado del permiso de ubicación precisa en Android
       permissionStatus = await request(
         PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION,
       );
+    }
+
+    // Si está bloqueado, mostrar settings
+    if (permissionStatus === 'blocked') {
+      await openSettings();
     }
 
     setPermissions({
@@ -53,19 +56,15 @@ export const PermissionsProvider: FC<PropsWithChildren> = ({children}: any) => {
     });
   };
 
-  // Comprobar permisos (no pregunta solo revisa el estado del mismo)
   const checkLocationPermission = useCallback(async () => {
-    let permissionStatus: PermissionStatus; // Variable para almacenar el estado del permiso
+    let permissionStatus: PermissionStatus;
 
     if (Platform.OS === 'ios') {
-      // Comprueba el estado actual del permiso de ubicación cuando la aplicación está en uso en iOS
       permissionStatus = await check(PERMISSIONS.IOS.LOCATION_WHEN_IN_USE);
     } else {
-      // Comprueba el estado actual del permiso de ubicación precisa en Android
       permissionStatus = await check(PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION);
     }
 
-    // Actualiza el estado de los permisos de ubicación en el componente utilizando el método setPermissions
     setPermissions({
       ...permissions,
       locationStatus: permissionStatus,
@@ -73,11 +72,19 @@ export const PermissionsProvider: FC<PropsWithChildren> = ({children}: any) => {
   }, [permissions]);
 
   useEffect(() => {
-    AppState.addEventListener('change', state => {
-      // console.log(state); // 'active' | 'background' | 'inactive'
+    const handleAppStateChange = (state: AppStateStatus) => {
       if (state !== 'active') return;
       checkLocationPermission();
-    });
+    };
+
+    const appStateSubscription = AppState.addEventListener(
+      'change',
+      handleAppStateChange,
+    );
+
+    return () => {
+      appStateSubscription.remove();
+    };
   }, [checkLocationPermission]);
 
   return (
